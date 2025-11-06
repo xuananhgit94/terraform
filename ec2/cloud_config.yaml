@@ -1,0 +1,43 @@
+package_update: true
+packages:
+  - git
+  - curl
+write_files:
+  - path: /usr/local/bin/setup_cdc-data.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      exec > /var/log/setup_cdc-data.log 2>&1
+      echo "[INFO] Installing Docker..."
+      curl -fsSL https://get.docker.com/ | sh
+      echo "[INFO] Cloning repository..."
+      sudo usermod -aG docker ubuntu
+      cd /home/ubuntu
+      git clone https://github.com/xuananhgit94/cdc-system-docker.git
+      cd /home/ubuntu/cdc-system-docker
+      echo "[INFO] Creating Docker network..."
+      docker network create cdc-stream
+      echo "[INFO] Starting docker-compose stack..."
+      docker compose -f docker-compose-stream.yaml up -d
+      echo "[INFO] Waiting for services..."
+      curl -sOL https://raw.githubusercontent.com/vishnubob/wait-for-it/master/wait-for-it.sh
+      chmod +x wait-for-it.sh
+      ./wait-for-it.sh -t 0 localhost:5432 -- echo "Postgres up"
+      ./wait-for-it.sh -t 0 localhost:8083 -- echo "Kafka Connect up"
+      ./wait-for-it.sh -t 0 localhost:9200 -- echo "Elasticsearch up"
+      echo "[INFO] Waiting for Kafka Connect REST API..."
+      until curl -s http://localhost:8083/connectors | grep -q '\[\|\{'; do
+      echo "  - Kafka Connect, wait 5s..."
+      sleep 5
+      done
+      echo "[INFO] Kafka Connect API ready, create connectors..."
+      curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" \
+        http://localhost:8083/connectors -d @configs/connector/postgres-source.json
+      curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" \
+        http://localhost:8083/connectors -d @configs/connector/elasticsearch-sink.json
+      sleep 50
+      docker compose up -d
+runcmd:
+  - [ bash, -c, "/usr/local/bin/setup_cdc-data.sh || true" ]

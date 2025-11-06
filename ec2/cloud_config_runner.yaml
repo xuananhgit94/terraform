@@ -1,0 +1,55 @@
+#cloud-config-runner
+package_update: true
+packages:
+  - git
+  - curl
+write_files:
+  - path: /usr/local/bin/setup_runner.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      exec > /var/log/setup_runner.log 2>&1
+
+      echo "[INFO] === STARTING RUNNER SETUP ==="
+
+      echo "[STEP] Installing Docker..."
+      curl -fsSL https://get.docker.com | sh
+
+      echo "[STEP] Adding 'ubuntu' to docker group..."
+      usermod -aG docker ubuntu
+
+      echo "[STEP] Testing Docker installation..."
+      su - ubuntu -c "docker run --rm hello-world" || echo "[WARN] Docker hello-world failed"
+
+      echo "[STEP] Enabling Docker BuildKit globally..."
+      mkdir -p /etc/docker
+      echo '{' > /etc/docker/daemon.json
+      echo '  "features": { "buildkit": true }' >> /etc/docker/daemon.json
+      echo '}' >> /etc/docker/daemon.json
+
+      echo "[STEP] Restarting Docker daemon..."
+      systemctl daemon-reload
+      systemctl enable docker
+      systemctl restart docker
+
+      echo "[CHECK] Waiting for Docker daemon..."
+      sleep 5
+      docker info >/dev/null 2>&1 && echo "[OK] Docker ready" || (echo "[ERROR] Docker not responding" && exit 1)
+
+      echo "[STEP] Installing Buildx plugin (if missing)..."
+      docker buildx version || docker buildx install
+
+      echo "[STEP] Creating dedicated Buildx builder using docker-container driver..."
+      docker buildx create --name runner-builder --driver docker-container --use || docker buildx use runner-builder
+
+      echo "[STEP] Bootstrapping Buildx builder..."
+      docker buildx inspect --bootstrap || true
+
+      echo "[INFO] === Buildx Builder Status ==="
+      docker buildx ls
+
+      echo "[INFO] === RUNNER SETUP COMPLETED SUCCESSFULLY ==="
+runcmd:
+  - [ bash, -c, "/usr/local/bin/setup_runner.sh || true" ]
