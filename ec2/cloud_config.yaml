@@ -38,6 +38,8 @@ write_files:
       curl -i -X POST -H "Accept:application/json" -H "Content-Type:application/json" \
         http://localhost:8083/connectors -d @configs/connector/elasticsearch-sink.json
       sleep 50
+      docker compose -f logging-compose.yaml up -d
+      sleep 50
       docker compose up -d
 runcmd:
   - [ bash, -c, "/usr/local/bin/setup_cdc-data.sh || true" ]

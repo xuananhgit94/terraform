@@ -31,13 +31,13 @@ data "aws_ami" "ubuntu" {
 
 resource "aws_instance" "cdc-data" {
   ami                         = data.aws_ami.ubuntu.id
-  instance_type               = "t3.medium"
+  instance_type               = "t3.large"
   key_name                    = "test"
   user_data_base64            = data.cloudinit_config.cdc-data.rendered
   vpc_security_group_ids      = [aws_security_group.cdc-data.id]
 
   root_block_device {
-    volume_size = 30
+    volume_size = 100
   }
 
   lifecycle {
